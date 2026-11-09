@@ -1,0 +1,8 @@
+# Secretos y datos locales: nunca al repo
+.env
+.env.*
+!.env.example
+data/
+node_modules/
+*.log
+.DS_Store

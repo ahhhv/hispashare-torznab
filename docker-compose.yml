@@ -1,0 +1,143 @@
+# Pila completa: hispashare-torznab + aMule + aMuTorrent + Prowlarr + Sonarr + Radarr + Jellyfin
+#
+#   cp .env.example .env   # y rellénalo
+#   mkdir -p data/{amule/config,downloads/temp,amutorrent,amutorrent-logs,prowlarr,sonarr,radarr,jellyfin}
+#   docker compose up -d --build
+#
+# Puertos: Jellyfin 8096 · Prowlarr 9696 · Sonarr 8989 · Radarr 7878 · aMuTorrent 4000 · aMule 4711 · Torznab 9118
+#
+# Rutas: aMule, aMuTorrent, Sonarr y Radarr ven las descargas en /downloads,
+# así Sonarr/Radarr pueden importar sin «Remote Path Mappings».
+# Las bibliotecas van en MEDIA_TV y MEDIA_MOVIES (.env).
+
+x-common: &common
+  restart: unless-stopped
+  environment: &common-env
+    PUID: ${PUID:-1000}
+    PGID: ${PGID:-1000}
+    TZ: ${TZ:-Europe/Madrid}
+
+services:
+  hispashare-torznab:
+    # Imagen publicada (arm64/amd64). Para compilarla tú, comenta «image» y descomenta «build».
+    image: ghcr.io/ahhhv/hispashare-torznab:latest
+    # build: .
+    container_name: hispashare-torznab
+    restart: unless-stopped
+    environment:
+      HISPASHARE_TOKEN: ${HISPASHARE_TOKEN:?Falta HISPASHARE_TOKEN en .env}
+      TORZNAB_APIKEY: ${TORZNAB_APIKEY:?Falta TORZNAB_APIKEY en .env}
+      HISPASHARE_API_URL: ${HISPASHARE_API_URL:-https://api.hispashare.org}
+      PORT: 9118
+      CACHE_TTL: ${CACHE_TTL:-600}
+      RSS_CACHE_TTL: ${RSS_CACHE_TTL:-300}
+      MAX_PAGES: ${MAX_PAGES:-2}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      SOURCE_MAP: ${SOURCE_MAP:-Micro4K:WEBRip,MicroHD:WEBRip}
+    ports:
+      - "9118:9118"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+
+  amule:
+    <<: *common
+    image: ngosang/amule:latest
+    container_name: amule
+    environment:
+      <<: *common-env
+      WEBUI_PWD: ${AMULE_WEBUI_PWD:?Falta AMULE_WEBUI_PWD en .env}
+      # Contraseña EC: activa las conexiones externas (puerto 4712) para aMuTorrent
+      GUI_PWD: ${AMULE_EC_PWD:?Falta AMULE_EC_PWD en .env}
+      INCOMING_DIR: /downloads
+      TEMP_DIR: /downloads/temp
+    ports:
+      - "4711:4711"       # Interfaz web de aMule
+      - "4662:4662"       # ED2K TCP  (ábrelo en el router → High ID)
+      - "4665:4665/udp"   # ED2K UDP  (búsquedas globales)
+      - "4672:4672/udp"   # ED2K/Kad UDP (ábrelo en el router)
+    volumes:
+      - ./data/amule/config:/home/amule/.aMule
+      - ${DOWNLOADS:-./data/downloads}:/downloads
+    stop_grace_period: 30s
+
+  amutorrent:
+    image: g0t3nks/amutorrent:latest
+    container_name: amutorrent
+    restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"
+    depends_on:
+      - amule
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      TZ: ${TZ:-Europe/Madrid}
+      AMULE_ENABLED: "true"
+      AMULE_HOST: amule
+      AMULE_PORT: 4712
+      AMULE_PASSWORD: ${AMULE_EC_PWD}
+      WEB_AUTH_ENABLED: "true"
+      WEB_AUTH_PASSWORD: ${AMUTORRENT_PASSWORD:?Falta AMUTORRENT_PASSWORD en .env}
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./data/amutorrent:/usr/src/app/server/data
+      - ./data/amutorrent-logs:/usr/src/app/server/logs
+      - ${DOWNLOADS:-./data/downloads}:/downloads
+
+  prowlarr:
+    <<: *common
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    ports:
+      - "9696:9696"
+    volumes:
+      - ./data/prowlarr:/config
+
+  sonarr:
+    <<: *common
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    ports:
+      - "8989:8989"
+    volumes:
+      - ./data/sonarr:/config
+      - ${DOWNLOADS:-./data/downloads}:/downloads
+      - ${MEDIA_TV:?Falta MEDIA_TV en .env}:/tv
+
+  radarr:
+    <<: *common
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    ports:
+      - "7878:7878"
+    volumes:
+      - ./data/radarr:/config
+      - ${DOWNLOADS:-./data/downloads}:/downloads
+      - ${MEDIA_MOVIES:?Falta MEDIA_MOVIES en .env}:/movies
+
+  jellyfin:
+    <<: *common
+    image: lscr.io/linuxserver/jellyfin:latest
+    container_name: jellyfin
+    environment:
+      <<: *common-env
+      JELLYFIN_PublishedServerUrl: ${JELLYFIN_URL:-http://orangepi5.local:8096}
+    ports:
+      - "8096:8096"         # Interfaz web
+      - "7359:7359/udp"     # Descubrimiento en la red local (opcional)
+    volumes:
+      - ./data/jellyfin:/config
+      - ${MEDIA_TV}:/data/tvshows:ro
+      - ${MEDIA_MOVIES}:/data/movies:ro
+    # Transcodificación por hardware del RK3588 (Orange Pi 5). Descomenta si
+    # existen estos dispositivos (ls /dev/dri /dev/mpp_service /dev/rga /dev/dma_heap)
+    # y activa «Rockchip MPP» en Jellyfin → Panel → Reproducción → Transcodificación.
+    # devices:
+    #   - /dev/dri:/dev/dri
+    #   - /dev/dma_heap:/dev/dma_heap
+    #   - /dev/mpp_service:/dev/mpp_service
+    #   - /dev/rga:/dev/rga
+    # security_opt:
+    #   - systempaths=unconfined
+    #   - apparmor=unconfined

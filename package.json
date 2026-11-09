@@ -1,0 +1,16 @@
+{
+  "name": "hispashare-torznab",
+  "version": "1.0.0",
+  "description": "Indexador Torznab para Hispashare (API oficial) pensado para Prowlarr/Sonarr/Radarr + aMuTorrent",
+  "main": "src/server.js",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "mock": "node mock/server.js",
+    "test": "node --test test/*.test.js"
+  }
+}
