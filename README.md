@@ -69,7 +69,7 @@ Valores que tienes que rellenar en `.env`:
 |---|---|
 | `HISPASHARE_TOKEN` | Tu token (§1) |
 | `TORZNAB_APIKEY` | Una clave inventada (`openssl rand -hex 16`); la pondrás en Prowlarr |
-| `DOWNLOAD_CLIENT` | `amutorrent` (por defecto) o `mularr` (en `docker-compose.mularr.yml` ya va a `mularr`) |
+| `DOWNLOAD_CLIENT` | *(Opcional)* Déjalo vacío al usar los compose (`docker-compose.yml` usa `amutorrent` y `docker-compose.mularr.yml` fija `mularr`) |
 | `AMULE_WEBUI_PWD` / `AMULE_EC_PWD` | *(Solo aMuTorrent)* Contraseñas de la web de aMule y de sus conexiones externas (EC) |
 | `AMUTORRENT_PASSWORD` | *(Solo aMuTorrent)* Contraseña del usuario `admin` de aMuTorrent |
 | `MULARR_PASSWORD` / `MULARR_API_KEY` | *(Solo Mularr)* Contraseña y API key opcional de Mularr |
@@ -105,6 +105,8 @@ Si usas `docker-compose.mularr.yml` (o tu propia instancia de Mularr):
 1. Entra en `http://<tu-ip>:8940` con `MULARR_USERNAME` (`admin`) y `MULARR_PASSWORD`.
 2. En **Servers**, conéctate a un servidor eD2k y comprueba que aMule (integrado en Mularr) tiene conexión.
 3. Crea las categorías `sonarr` (`/downloads/sonarr`) y `radarr` (`/downloads/radarr`) si quieres separar las descargas por carpeta (o deja que Mularr las cree automáticamente al recibir la primera descarga).
+
+> **Espacio en disco al importar:** por defecto Mularr mantiene las descargas compartiéndose hasta ratio `1` o 3 días (`4320` min), lo que hace que Sonarr y Radarr **copien** el archivo en vez de moverlo; al estar `/downloads` y `/tv` o `/movies` en volúmenes distintos, cada archivo ocuparía el doble durante esos días. En `docker-compose.mularr.yml` ambos límites (`SEED_RATIO_LIMIT` y `SEED_TIME_LIMIT_MINUTES`) vienen a `0` para que se mueva al importar; si prefieres seguir compartiendo las descargas terminadas, puedes cambiarlos con `MULARR_SEED_RATIO_LIMIT` y `MULARR_SEED_TIME_LIMIT_MINUTES` en `.env` (o en la configuración del indexador en Sonarr/Radarr).
 
 ### 3.2 Sonarr (`:8989`) y Radarr (`:7878`)
 

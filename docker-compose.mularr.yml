@@ -33,7 +33,7 @@ services:
       RSS_CACHE_TTL: ${RSS_CACHE_TTL:-300}
       MAX_PAGES: ${MAX_PAGES:-2}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      DOWNLOAD_CLIENT: ${DOWNLOAD_CLIENT:-mularr}
+      DOWNLOAD_CLIENT: mularr
       SOURCE_MAP: ${SOURCE_MAP:-Micro4K:WEBRip,MicroHD:WEBRip}
     ports:
       - "9118:9118"
@@ -52,6 +52,10 @@ services:
       PORT: 8940
       AMULE_INCOMING_DIR: /downloads
       AMULE_TEMP_DIR: /downloads/temp
+      # Con 0, Sonarr y Radarr mueven el archivo al importar en vez de copiarlo
+      # (evita duplicar espacio al ser /downloads y /tv o /movies volúmenes distintos).
+      SEED_RATIO_LIMIT: ${MULARR_SEED_RATIO_LIMIT:-0}
+      SEED_TIME_LIMIT_MINUTES: ${MULARR_SEED_TIME_LIMIT_MINUTES:-0}
       AUTH_USERNAME: ${MULARR_USERNAME:-admin}
       AUTH_PASSWORD: ${MULARR_PASSWORD:?Falta MULARR_PASSWORD en .env}
       API_KEY: ${MULARR_API_KEY:-}
