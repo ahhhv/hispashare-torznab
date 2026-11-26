@@ -37,8 +37,8 @@ Q_MOVIE=${Q_MOVIE:-The%20Last%20Frontier}
 
 FAIL=0
 check() {
-  name=$1; qs=$2; expect=$3
-  body=$(curl -s -w '\n%{http_code}' "$URL/api?apikey=$KEY&$qs")
+  name=$1; qs=$2; expect=$3; path=${4:-/api}
+  body=$(curl -s -w '\n%{http_code}' "$URL$path?apikey=$KEY&$qs")
   code=$(printf '%s' "$body" | tail -n1)
   xml=$(printf '%s' "$body" | sed '$d')
   n=$(printf '%s' "$xml" | grep -c '<item>' || true)
@@ -59,6 +59,7 @@ check "tvsearch imdbid+season+ep"        "t=tvsearch&imdbid=$IMDB_TV&season=$SEA
 check "tvsearch imdbid+season"           "t=tvsearch&imdbid=$IMDB_TV&season=$SEASON"            '<item>'
 check "tvsearch q+season+ep"             "t=tvsearch&q=$Q_TV&season=$SEASON&ep=$EP"             '<item>'
 check "movie imdbid"                     "t=movie&imdbid=$IMDB_MOVIE"                           '<item>'
+check "movie imdbid (mularr)"            "t=movie&imdbid=$IMDB_MOVIE"                           'dn=ed2k%3A%2F%2F' "/mularr/api"
 check "movie q"                          "t=movie&q=$Q_MOVIE"                                   '<item>'
 check "RSS (sin parámetros)"             "t=search"                                             '<item>'
 check "RSS tv (cat=5000)"                "t=tvsearch&cat=5000"                                  '<rss'

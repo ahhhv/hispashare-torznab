@@ -86,7 +86,7 @@ function itemsFromTitle(title, cfg) {
   }
 
   for (const rel of title.releases || []) {
-    const links = (rel.elinks || []).map(P.ed2kToMagnet).filter(Boolean)
+    const links = (rel.elinks || []).map((l) => P.ed2kToMagnet(l, cfg.downloadClient)).filter(Boolean)
       .filter((l) => !NON_VIDEO_EXT.test(l.filename));
     const multiPartMovie = kind === 'movie' && links.length > 1;
 

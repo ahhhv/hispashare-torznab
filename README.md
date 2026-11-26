@@ -9,18 +9,18 @@ Un **stack completo** para tener series y películas de **Hispashare** de forma 
 | **Radarr** | 7878 | Lo mismo para películas |
 | **Prowlarr** | 9696 | Gestiona los indexadores y los reparte a Sonarr y Radarr |
 | **hispashare-torznab** | 9118 | Indexador Torznab que busca en la API de Hispashare |
-| **aMuTorrent** | 4000 | Se hace pasar por qBittorrent ante Sonarr y Radarr y manda las descargas a aMule |
-| **aMule** | 4711 | Descarga por ed2k/Kad |
+| **aMuTorrent** + **aMule** | 4000 / 4711 | Cliente qBittorrent → aMule (`docker-compose.yml`, por defecto) |
+| **Mularr** *(alternativa)* | 8940 | Cliente qBittorrent con aMule integrado (`docker-compose.mularr.yml`) |
 
 ```
                       ┌──────────── Prowlarr ◀──(Torznab)── hispashare-torznab ──(API)──▶ api.hispashare.org
                       ▼
-Jellyfin ◀── biblioteca ◀── Sonarr / Radarr ──(«qBittorrent»: magnet ed2k)──▶ aMuTorrent ──(EC)──▶ aMule
+Jellyfin ◀── biblioteca ◀── Sonarr / Radarr ──(«qBittorrent»: magnet ed2k)──▶ aMuTorrent + aMule  ó  Mularr
 ```
 
 - El indexador está hecho en Node.js 22 y no tiene ninguna dependencia. Su imagen (`ghcr.io/ahhhv/hispashare-torznab`) es multiarquitectura, se ejecuta con un usuario sin privilegios y trae healthcheck.
-- Devuelve un resultado por archivo (cada enlace ed2k), con un título de release que Sonarr y Radarr saben interpretar y el magnet «falso» que espera aMuTorrent.
-- El resto son imágenes oficiales: `ngosang/amule`, `g0t3nks/amutorrent`, y Prowlarr, Sonarr, Radarr y Jellyfin de linuxserver.io.
+- Devuelve un resultado por archivo (cada enlace ed2k), con un título de release que Sonarr y Radarr saben interpretar y el magnet «falso» que espera **aMuTorrent** o **Mularr** (configurable con `DOWNLOAD_CLIENT` o por ruta en `/amutorrent/api` y `/mularr/api`).
+- El resto son imágenes oficiales: `ngosang/amule`, `g0t3nks/amutorrent`, `ghcr.io/joecarl/mularr`, y Prowlarr, Sonarr, Radarr y Jellyfin de linuxserver.io.
 
 > **Usa la API con moderación.** Hispashare la ofrece gratis y cada token tiene un límite de peticiones por hora. El indexador guarda las respuestas en caché, deja de pedir en cuanto recibe un 429 y no pasa de unas pocas páginas por búsqueda. Aun así, lo que más consume es la búsqueda automática de Sonarr y Radarr: no programes búsquedas masivas, no bajes la caché a cero y no compartas tu token.
 
@@ -46,15 +46,22 @@ cp .env.example .env
 openssl rand -hex 16     # usa el resultado como TORZNAB_APIKEY
 nano .env                # rellena el token, la apikey, las contraseñas y las rutas
 
+# Con aMuTorrent + aMule (por defecto):
 mkdir -p data/{amule/config,downloads/temp,downloads/sonarr,downloads/radarr,amutorrent,amutorrent-logs,prowlarr,sonarr,radarr,jellyfin}
 chown -R 1000:1000 data            # el mismo PUID:PGID que pongas en .env
 # y haz lo mismo con las carpetas de MEDIA_TV y MEDIA_MOVIES
 
 docker compose up -d
 docker compose ps
+
+# O si prefieres Mularr (incluye aMule integrado):
+mkdir -p data/{mularr,downloads/temp,downloads/sonarr,downloads/radarr,prowlarr,sonarr,radarr,jellyfin}
+chown -R 1000:1000 data
+docker compose -f docker-compose.mularr.yml up -d
+docker compose -f docker-compose.mularr.yml ps
 ```
 
-Los siete contenedores tienen que salir `Up`. En `docker compose logs hispashare-torznab` debe aparecer `/health → 200 OK`.
+Todos los contenedores tienen que salir `Up`. En `docker compose logs hispashare-torznab` debe aparecer `/health → 200 OK`.
 
 Valores que tienes que rellenar en `.env`:
 
@@ -62,8 +69,10 @@ Valores que tienes que rellenar en `.env`:
 |---|---|
 | `HISPASHARE_TOKEN` | Tu token (§1) |
 | `TORZNAB_APIKEY` | Una clave inventada (`openssl rand -hex 16`); la pondrás en Prowlarr |
-| `AMULE_WEBUI_PWD` / `AMULE_EC_PWD` | Contraseñas de la web de aMule y de sus conexiones externas (EC) |
-| `AMUTORRENT_PASSWORD` | Contraseña del usuario `admin` de aMuTorrent |
+| `DOWNLOAD_CLIENT` | *(Opcional)* Déjalo vacío al usar los compose (`docker-compose.yml` usa `amutorrent` y `docker-compose.mularr.yml` fija `mularr`) |
+| `AMULE_WEBUI_PWD` / `AMULE_EC_PWD` | *(Solo aMuTorrent)* Contraseñas de la web de aMule y de sus conexiones externas (EC) |
+| `AMUTORRENT_PASSWORD` | *(Solo aMuTorrent)* Contraseña del usuario `admin` de aMuTorrent |
+| `MULARR_PASSWORD` / `MULARR_API_KEY` | *(Solo Mularr)* Contraseña y API key opcional de Mularr |
 | `DOWNLOADS` | Carpeta de descargas de aMule (por defecto `./data/downloads`) |
 | `MEDIA_TV` / `MEDIA_MOVIES` | Carpetas de tus bibliotecas de series y películas |
 | `PUID` / `PGID` | El usuario dueño de esas carpetas (`id tu_usuario`) |
@@ -89,26 +98,37 @@ Como todo vive en el mismo compose, los servicios se llaman entre sí **por el n
    | `sonarr` | `/downloads/sonarr` |
    | `radarr` | `/downloads/radarr` |
 
+### 3.1b Alternativa: Mularr (`:8940`)
+
+Si usas `docker-compose.mularr.yml` (o tu propia instancia de Mularr):
+
+1. Entra en `http://<tu-ip>:8940` con `MULARR_USERNAME` (`admin`) y `MULARR_PASSWORD`.
+2. En **Servers**, conéctate a un servidor eD2k y comprueba que aMule (integrado en Mularr) tiene conexión.
+3. Crea las categorías `sonarr` (`/downloads/sonarr`) y `radarr` (`/downloads/radarr`) si quieres separar las descargas por carpeta (o deja que Mularr las cree automáticamente al recibir la primera descarga).
+
+> **Espacio en disco al importar:** por defecto Mularr mantiene las descargas compartiéndose hasta ratio `1` o 3 días (`4320` min), lo que hace que Sonarr y Radarr **copien** el archivo en vez de moverlo; al estar `/downloads` y `/tv` o `/movies` en volúmenes distintos, cada archivo ocuparía el doble durante esos días. En `docker-compose.mularr.yml` ambos límites (`SEED_RATIO_LIMIT` y `SEED_TIME_LIMIT_MINUTES`) vienen a `0` para que se mueva al importar; si prefieres seguir compartiendo las descargas terminadas, puedes cambiarlos con `MULARR_SEED_RATIO_LIMIT` y `MULARR_SEED_TIME_LIMIT_MINUTES` en `.env` (o en la configuración del indexador en Sonarr/Radarr).
+
 ### 3.2 Sonarr (`:8989`) y Radarr (`:7878`)
 
 En cada uno:
 
 1. Crea el usuario la primera vez que entres.
 2. **Settings → Media Management → Add Root Folder:** `/tv` en Sonarr y `/movies` en Radarr.
-3. **Settings → Download Clients → + → qBittorrent:**
+3. **Settings → Download Clients → + → qBittorrent** (pulsa **Show Advanced** si usas Mularr):
 
-   | Campo | Valor |
-   |---|---|
-   | Host | `amutorrent` |
-   | Port | `4000` |
-   | Username | `admin` |
-   | Password | `AMUTORRENT_PASSWORD` (o tu API key personal de aMuTorrent) |
-   | Category | `sonarr` / `radarr` |
+   | Campo | Con aMuTorrent | Con Mularr |
+   |---|---|---|
+   | Host | `amutorrent` | `mularr` |
+   | Port | `4000` | `8940` |
+   | URL Base | *(vacío)* | `/api/as-qbittorrent` |
+   | Username | `admin` | `admin` (o `apikey` si usas `MULARR_API_KEY`) |
+   | Password | `AMUTORRENT_PASSWORD` (o tu API key personal de aMuTorrent) | `MULARR_PASSWORD` (o `MULARR_API_KEY`) |
+   | Category | `sonarr` / `radarr` | `sonarr` / `radarr` |
 
    Pulsa **Test** y guarda.
 4. Copia la **API Key** de **Settings → General**; la necesitas en Prowlarr.
 
-aMule, aMuTorrent, Sonarr y Radarr ven las descargas en la misma ruta (`/downloads`), así que no hacen falta *Remote Path Mappings*.
+El cliente de descargas (aMule/aMuTorrent o Mularr), Sonarr y Radarr ven las descargas en la misma ruta (`/downloads`), así que no hacen falta *Remote Path Mappings*.
 
 ### 3.3 Prowlarr (`:9696`)
 
@@ -180,11 +200,11 @@ Añádelo en Prowlarr como **Generic Torznab** (URL `http://IP:9118`, API Path `
 
 | Campo | Valor |
 |---|---|
-| URL / API Path | `http://IP:9118` · `/api` |
+| URL / API Path | `http://IP:9118` · `/api` (o `/amutorrent/api` / `/mularr/api` para forzar un cliente concreto) |
 | API Key | `TORZNAB_APIKEY` |
 | Categories | Sonarr: `5000,5040,5045` · Radarr: `2000,2040,2045` |
 
-Como cliente de descargas necesitarás aMuTorrent (con aMule) configurado como «qBittorrent», como en §3.2.
+Como cliente de descargas necesitarás **aMuTorrent** (con aMule) o **Mularr** configurado como «qBittorrent», como en §3.2. Si usas Mularr, puedes pasar `-e DOWNLOAD_CLIENT=mularr` al contenedor o usar directamente `/mularr/api` como API Path (incluso puedes usar `/amutorrent/api` y `/mularr/api` a la vez desde el mismo contenedor compartiendo la caché de Hispashare).
 
 Para compilar la imagen tú mismo: en `docker-compose.yml` comenta `image:`, descomenta `build: .` y usa `docker compose up -d --build`.
 
@@ -194,6 +214,7 @@ Para compilar la imagen tú mismo: en `docker-compose.yml` comenta `image:`, des
 |---|---|---|
 | `HISPASHARE_TOKEN` | *(obligatoria)* | Token personal de Hispashare |
 | `TORZNAB_APIKEY` | *(obligatoria)* | Clave propia del indexador |
+| `DOWNLOAD_CLIENT` | `amutorrent` | Formato de magnet por defecto en `/api`: `amutorrent` o `mularr` |
 | `HISPASHARE_API_URL` | `https://api.hispashare.org` | Dirección base de la API |
 | `PORT` | `9118` | Puerto HTTP |
 | `CACHE_TTL` | `600` | Segundos que dura en caché una búsqueda |
@@ -205,7 +226,11 @@ Para compilar la imagen tú mismo: en `docker-compose.yml` comenta `image:`, des
 | `RELEASE_GROUP` | `HispaShare` | Sufijo `-Grupo` de los títulos |
 | `FAKE_SEEDERS` | `10` | Seeders y peers ficticios, para que no se descarten los resultados |
 
-Lo que pasa en una descarga: Sonarr manda a aMuTorrent el magnet `magnet:?xt=urn:btih:<ed2k+00000000>&dn=…&xl=…`, aMuTorrent rehace el `ed2k://` y se lo pasa a aMule. El archivo se guarda con **su nombre original de Hispashare** (por ejemplo «El instituto 2x01 Ajuste de cuentas.mkv»). Sonarr y Radarr siguen la descarga por el hash y la importan sin problema.
+Lo que pasa en una descarga:
+- **Con aMuTorrent:** Sonarr/Radarr mandan `magnet:?xt=urn:btih:<ed2k+00000000>&dn=<nombre>&xl=<tamaño>`, aMuTorrent rehace el `ed2k://` y se lo pasa a aMule.
+- **Con Mularr:** Sonarr/Radarr mandan `magnet:?xt=urn:btih:<sha1(ed2k)>&dn=<ed2k_link_codificado>`, Mularr extrae el `ed2k://` de `dn`, lo añade a su aMule integrado y expone la descarga con el mismo hash `sha1(ed2k)`.
+
+En ambos casos el archivo se guarda con **su nombre original de Hispashare** (por ejemplo «El instituto 2x01 Ajuste de cuentas.mkv») y Sonarr/Radarr siguen la descarga por el hash y la importan sin problema.
 
 ## 6. Cómo funciona la búsqueda
 
@@ -257,7 +282,7 @@ The.Last.Frontier.2025.2160p.WEBRip.Micro4K.HDR10+.DV.10bit.x265.AAC.SPANISH.ENG
 - **Capítulos detectados por el nombre.** Si un archivo no usa `2x01` ni `S02E01`, queda como pack o «Complete» (ver tabla de §6).
 - **Límite de peticiones.** Con el RSS cada 15 minutos (lo normal en Sonarr y Radarr) y la caché, el consumo es bajo. Lo que más gasta es una búsqueda automática de muchas series o películas a la vez.
 - **Seeders ficticios.** ed2k no tiene seeders: el valor 10 es inventado y no dice nada sobre cuántas fuentes tiene el archivo en aMule.
-- **Nombres con `%`.** aMuTorrent decodifica dos veces el `dn` del magnet. En los nombres que contienen un `%` literal, el indexador lo codifica dos veces para que el ed2k salga bien. En el resto, el magnet es exactamente el formato de aMuTorrent.
+- **Nombres con `%`.** Tanto aMuTorrent como Mularr decodifican el parámetro `dn` del magnet más de una vez. En los nombres que contienen un `%` literal, el indexador lo protege para que el enlace `ed2k://` llegue íntegro; en el resto, el magnet coincide exactamente con el formato nativo de cada cliente.
 
 ## 9. Desarrollo y pruebas (sin token real)
 

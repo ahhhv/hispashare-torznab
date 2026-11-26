@@ -1,7 +1,11 @@
 'use strict';
 
+const crypto = require('node:crypto');
+
 // ---------------------------------------------------------------------------
-// ed2k ↔ magnet (formato exacto de aMuTorrent, server/lib/linkConverter.js)
+// ed2k ↔ magnet
+//   - aMuTorrent (server/lib/linkConverter.js)
+//   - Mularr     (backend/src/controllers/qbittorrentMappings.ts)
 // ---------------------------------------------------------------------------
 
 const ED2K_RE = /ed2k:\/\/\|file\|([^|]*)\|(\d+)\|([a-fA-F0-9]{32})\|/i;
@@ -21,10 +25,35 @@ function parseEd2k(link) {
   return { filename: safeDecode(m[1]), size: Number(m[2]), hash: m[3].toLowerCase() };
 }
 
-// magnet:?xt=urn:btih:<hash_ed2k + "00000000">&dn=<nombre>&xl=<tamaño>
-function ed2kToMagnet(link) {
+// Formato aMuTorrent:
+//   magnet:?xt=urn:btih:<hash_ed2k + "00000000">&dn=<nombre>&xl=<tamaño>
+// Formato Mularr:
+//   magnet:?xt=urn:btih:<sha1(hash_ed2k)>&dn=<ed2k_link_codificado>
+function ed2kToMagnet(link, client = 'amutorrent') {
   const p = parseEd2k(link);
   if (!p) return null;
+  const fmt = String(client || 'amutorrent').toLowerCase();
+
+  if (fmt === 'mularr') {
+    const magnetHash = crypto.createHash('sha1').update(p.hash).digest('hex');
+    // Mularr decodifica dn dos veces (URLSearchParams.get + decodeURIComponent)
+    // y parseEd2kLink decodifica el nombre una tercera vez. Si el nombre contiene
+    // «%» se protege para que sobreviva a las tres pasadas; sin «%» el magnet
+    // es idéntico al que genera eD2kLinkToFakeMagnet en Mularr.
+    const safeName = (p.filename || 'unknown').replace(/%/g, '%25');
+    const ed2kLink = `ed2k://|file|${safeName}|${p.size}|${p.hash.toUpperCase()}|/`;
+    const dn = encodeURIComponent(ed2kLink).replace(/%25/g, '%2525');
+    return {
+      magnet: `magnet:?xt=urn:btih:${magnetHash}&dn=${dn}`,
+      magnetHash,
+      ...p,
+    };
+  }
+
+  if (fmt !== 'amutorrent') {
+    throw new Error(`Cliente de descargas no soportado: "${client}"`);
+  }
+
   const magnetHash = p.hash + '00000000';
   // aMuTorrent decodifica dn dos veces (URLSearchParams.get + decodeURIComponent).
   // Un «%» literal en el nombre rompería la segunda decodificación, así que solo

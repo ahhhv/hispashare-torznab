@@ -41,8 +41,8 @@ async function setup(mockOpts = {}, envExtra = {}) {
   const client = new HispashareClient(cfg);
   const server = createServer(cfg, { client });
   const port = await listen(server);
-  const get = async (qs) => {
-    const r = await fetch(`http://127.0.0.1:${port}/api?apikey=secret&${qs}`);
+  const get = async (qs, path = '/api') => {
+    const r = await fetch(`http://127.0.0.1:${port}${path}?apikey=secret&${qs}`);
     return { status: r.status, headers: r.headers, xml: await r.text() };
   };
   return { mock, server, client, get, close: () => { mock.close(); server.close(); } };
@@ -212,4 +212,49 @@ test('token inválido → error Torznab, sin filtrar el token', async (t) => {
 test('el log nunca muestra el token', () => {
   log.addSecret('super-token-123');
   assert.equal(log.redact('Bearer super-token-123'), 'Bearer ***');
+});
+
+test('DOWNLOAD_CLIENT=mularr devuelve magnets compatibles con Mularr', async (t) => {
+  const crypto = require('node:crypto');
+  const { hash: mockHash } = require('../mock/data');
+  const s = await setup({}, { DOWNLOAD_CLIENT: 'mularr' });
+  t.after(s.close);
+
+  const { status, xml } = await s.get('t=tvsearch&imdbid=tt9900001&season=2&ep=1');
+  assert.equal(status, 200);
+  assertWellFormed(xml);
+  const ed2kHash = mockHash('El instituto 2x01 Ajuste de cuentas.mkv').toLowerCase();
+  const expectedBtih = crypto.createHash('sha1').update(ed2kHash).digest('hex');
+  assert.deepEqual(attrs(xml, 'infohash'), [expectedBtih]);
+  assert.match(xml, new RegExp(`<guid isPermaLink="false">${expectedBtih}</guid>`));
+  assert.match(
+    xml,
+    new RegExp(`<link>magnet:\\?xt=urn:btih:${expectedBtih}&amp;dn=ed2k%3A%2F%2F%7Cfile%7CEl%20instituto%202x01%20Ajuste%20de%20cuentas\\.mkv%7C1503238553%7C${ed2kHash.toUpperCase()}%7C%2F</link>`),
+  );
+});
+
+test('rutas /mularr/api y /amutorrent/api permiten ambos clientes compartiendo caché', async (t) => {
+  const s = await setup(); // por defecto amutorrent
+  t.after(s.close);
+
+  const amu = await s.get('t=movie&imdbid=tt9900003', '/api');
+  const mul = await s.get('t=movie&imdbid=tt9900003', '/mularr/api');
+  const amuExplicit = await s.get('t=movie&imdbid=tt9900003', '/amutorrent/api');
+
+  assertWellFormed(amu.xml);
+  assertWellFormed(mul.xml);
+  assertWellFormed(amuExplicit.xml);
+
+  // aMuTorrent usa relleno 00000000 y dn=<nombre>; Mularr usa sha1 y dn=ed2k://...
+  assert.match(amu.xml, /xt=urn:btih:[0-9a-f]{32}00000000&amp;dn=La%20%C3%BAltima/);
+  assert.equal(amu.xml, amuExplicit.xml);
+  assert.match(mul.xml, /xt=urn:btih:[0-9a-f]{40}&amp;dn=ed2k%3A%2F%2F%7Cfile%7CLa%20%C3%BAltima/);
+  assert.ok(!/00000000&amp;dn=ed2k/.test(mul.xml));
+
+  // Las tres consultas compartieron la misma entrada de caché de Hispashare
+  assert.equal(s.mock.state.requests, 1);
+});
+
+test('DOWNLOAD_CLIENT inválido falla al cargar la configuración', () => {
+  assert.throws(() => config.load({ DOWNLOAD_CLIENT: 'desconocido' }), /DOWNLOAD_CLIENT/);
 });

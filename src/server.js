@@ -34,7 +34,8 @@ function createServer(cfg, { client = new HispashareClient(cfg) } = {}) {
       return res.end('OK');
     }
 
-    // Se acepta /api y cualquier ruta que termine en /api (p. ej. /torznab/api)
+    // Se acepta /api y cualquier ruta que termine en /api (p. ej. /torznab/api,
+    // /amutorrent/api o /mularr/api para elegir el formato de magnet por ruta).
     if (!/(^|\/)api\/?$/.test(url.pathname)) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       return res.end('Not found. Usa /api?t=caps');
@@ -50,13 +51,16 @@ function createServer(cfg, { client = new HispashareClient(cfg) } = {}) {
       return send(res, 401, torznab.errorXml(100, 'Incorrect user credentials'));
     }
 
+    const clientMatch = /(?:^|\/)(amutorrent|mularr)\/api\/?$/i.exec(url.pathname);
+    const downloadClient = clientMatch ? clientMatch[1].toLowerCase() : cfg.downloadClient;
+
     const t = String(params.t || 'search').toLowerCase();
     try {
       if (t === 'caps') return send(res, 200, torznab.capsXml());
       if (!['search', 'tvsearch', 'tv-search', 'movie', 'movie-search'].includes(t)) {
         return send(res, 200, torznab.errorXml(202, `No such function (${t})`));
       }
-      const { items, total, offset } = await searcher.search(params);
+      const { items, total, offset } = await searcher.search(params, { downloadClient });
       return send(res, 200, torznab.resultsXml(items, cfg, { total, offset }));
     } catch (err) {
       if (err instanceof RateLimitError) {
@@ -94,7 +98,7 @@ async function main() {
 
   const server = createServer(cfg);
   server.listen(cfg.port, () => {
-    log.info(`hispashare-torznab escuchando en :${cfg.port} (Torznab en /api) · caché ${cfg.cacheTtl}s / RSS ${cfg.rssCacheTtl}s · máx. ${cfg.maxPages} páginas`);
+    log.info(`hispashare-torznab escuchando en :${cfg.port} (Torznab en /api · cliente: ${cfg.downloadClient}) · caché ${cfg.cacheTtl}s / RSS ${cfg.rssCacheTtl}s · máx. ${cfg.maxPages} páginas`);
   });
   const stop = () => server.close(() => process.exit(0));
   process.on('SIGTERM', stop);
