@@ -33,6 +33,7 @@ services:
       RSS_CACHE_TTL: ${RSS_CACHE_TTL:-300}
       MAX_PAGES: ${MAX_PAGES:-2}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      DOWNLOAD_CLIENT: ${DOWNLOAD_CLIENT:-amutorrent}
       SOURCE_MAP: ${SOURCE_MAP:-Micro4K:WEBRip,MicroHD:WEBRip}
     ports:
       - "9118:9118"

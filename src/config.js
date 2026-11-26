@@ -13,6 +13,18 @@ function int(env, name, def, min = 0) {
   return n;
 }
 
+const DOWNLOAD_CLIENTS = ['amutorrent', 'mularr'];
+
+function downloadClient(env) {
+  const raw = env.DOWNLOAD_CLIENT;
+  if (raw === undefined || raw === '') return 'amutorrent';
+  const val = String(raw).trim().toLowerCase();
+  if (!DOWNLOAD_CLIENTS.includes(val)) {
+    throw new Error(`DOWNLOAD_CLIENT debe ser uno de ${DOWNLOAD_CLIENTS.join(', ')} (valor recibido: "${raw}")`);
+  }
+  return val;
+}
+
 // SOURCE_MAP="Micro4K:WEBRip,MicroHD:WEBRip" → { micro4k: 'WEBRip', microhd: 'WEBRip' }
 function parseSourceMap(raw) {
   const map = {};
@@ -36,6 +48,7 @@ function load(env = process.env) {
     requestTimeout: int(env, 'REQUEST_TIMEOUT', 15, 1),
     defaultRetryAfter: int(env, 'DEFAULT_RETRY_AFTER', 60, 1),
     logLevel: (env.LOG_LEVEL || 'info').toLowerCase(),
+    downloadClient: downloadClient(env),
     sourceMap: parseSourceMap(env.SOURCE_MAP ?? 'Micro4K:WEBRip,MicroHD:WEBRip'),
     releaseGroup: env.RELEASE_GROUP || 'HispaShare',
     fakeSeeders: int(env, 'FAKE_SEEDERS', 10),
@@ -43,4 +56,4 @@ function load(env = process.env) {
   };
 }
 
-module.exports = { load, parseSourceMap };
+module.exports = { load, parseSourceMap, DOWNLOAD_CLIENTS };

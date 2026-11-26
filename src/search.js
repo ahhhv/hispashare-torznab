@@ -58,7 +58,8 @@ class Searcher {
   }
 
   // params: objeto con los parámetros Torznab de la URL.
-  async search(params) {
+  async search(params, { downloadClient } = {}) {
+    const cfg = downloadClient ? { ...this.cfg, downloadClient } : this.cfg;
     const t = String(params.t || 'search').toLowerCase();
     const mode = t === 'tvsearch' || t === 'tv-search' ? 'tv' : t === 'movie' || t === 'movie-search' ? 'movie' : 'any';
 
@@ -88,7 +89,7 @@ class Searcher {
       titles = titles.filter((ti) => !ti.production_year || Math.abs(ti.production_year - pq.year) <= 1);
     }
 
-    let items = titles.flatMap((ti) => itemsFromTitle(ti, this.cfg));
+    let items = titles.flatMap((ti) => itemsFromTitle(ti, cfg));
 
     if (mode === 'tv') items = items.filter((i) => i.mediaKind === 'tv');
     if (mode === 'movie') items = items.filter((i) => i.mediaKind === 'movie');
